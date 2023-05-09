@@ -5,6 +5,8 @@ import os
 import socket
 import csv
 import random
+import json
+from enum import Enum
 # BEGIN code diambil dari node_socket.py assignment1
 class NodeSocket:
     def __init__(self, socket_kind: socket.SocketKind, port: int = 0):
@@ -29,10 +31,17 @@ class UdpSocket(NodeSocket):
 
 def thread_exception_handler(args):
     logging.error(f"Uncaught exception", exc_info=(args.exc_type, args.exc_value, args.exc_traceback))
-    
+
+class MessageType(Enum):
+    SYN = 1 
+    ACK = 2 
+
+
 class RingNode:
 
-    def __init__(self, node_id: int, port: int, active_nodes: list, fault_duration: int, active_nodes_ports: list,
+    ACK = 'ACK'
+
+    def __init__(self, node_id: int, port: int, active_nodes: list, fault_duration: int, is_continue: bool,
                  heartbeat_duration: float, leader: int):
         self.node_id = node_id
         self.port = port
@@ -41,21 +50,48 @@ class RingNode:
         self.fault_duration = fault_duration
         self.heartbeat_duration = heartbeat_duration
         self.leader = leader
+        self.socket = UdpSocket(self.port)
         pass
         
     def start_heartbeat_listen(self,fault_duration):
-        pass
+        raw_msg,address = self.socket.listen()
+        message = json.loads(raw_msg)
+        assert type(message) == dict
+        if message['type'] == MessageType.ACK and message['receiver_id'] == self.node_id:
+            logging.info(f"[HEARTBEAT] finished for node {message['sender_id']}: ACTIVE ")
+        elif message['type'] == MessageType.SYN:
+            raw_response = {
+                'sender_id' : self.node_id,
+                'target_id' : message['sender_id'],
+                'type' : MessageType.ACK
+            }
+            response_msg = json.dumps(raw_response)
+            self.socket.send(response_msg,address)
 
-    def start_heartbeat(self,heartbeat_duration):
-        pass
+    def start_heartbeat(self):
+        while True:
+            position = self.active_nodes.index(self.node_id)
+            num_nodes = len(self.active_nodes)
+            prev_neighbor_id = (position - 1) % num_nodes
+            prev_neighbor_port = self.active_nodes[prev_neighbor_id]
+            raw_message = {
+                'sender_id' : self.node_id,
+                'target_id' : prev_neighbor_id,
+                'type' : MessageType.SYN
+            }
+            message = json.dumps(raw_message)
+            logging.info(f"[HEARTBEAT] sending heartbeat to node_{prev_neighbor_id}")
+            self.socket.send(message,prev_neighbor_port)
+        
+
 
     def become_candidate(self):
         pass
 
     def start(self):
-        logging.info(f'node {self.node_id} sucesfully start')
-        logging.info(f'initial leader = node {self.leader}')
-        
+        logging.info(f"Node {self.node_id} is starting...")
+        logging.info("Initiating heartbeat listen thread")
+        heartbeat_listen_thread = threading.Thread(target=self.start_heartbeat_listen)
 
 
 def reload_logging_windows(filename):
