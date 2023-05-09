@@ -50,23 +50,11 @@ def manual_event_input(args, starting_port, port_used, number_of_nodes):
             logger.debug("Kill node input is working...")
             input_value = int(input_value[1:])
             list_nodes[input_value - 1].kill()
+            list_nodes.pop(input_value - 1)
             logger.info(f"Kill node {input_value}...")
-        elif "r" in input_value:
-            logger.info("Restart node input is working...")
-            node_id = int(input_value[1:])
-            process = NodeProcess(target=node.main, args=(
-                float(args.heartbeat),
-                float(args.fault_duration),
-                starting_port + node_id - 1,
-                node_id, port_used,
-                True
-            ))
-            list_nodes[node_id - 1] = process
-            process.start()
-            logger.info(f"Node {node_id} has running...")
         elif "e" in input_value:
             logger.info("Stop all nodes...")
-            for node_id in range(number_of_nodes):
+            for node_id in range(len(list_nodes)):
                 process = list_nodes.pop()
                 process.kill()
                 logger.debug(f"Kill process with ID: {process.name}")
@@ -81,8 +69,6 @@ def main():
                         help="The particular duration of the heartbeat", default=1)
     parser.add_argument("-f", type=str, dest="fault_duration",
                         help="The particular duration to assume a leader node to be a fault", default=1.5)
-    parser.add_argument("-p", type=str, dest="port",
-                        help="Starting port", default=6574)
     args = parser.parse_args()
 
     sys.excepthook = handle_exception
@@ -96,7 +82,8 @@ def main():
     logger.info("Done determining the ports that will be used...")
 
     logger.debug(f"number_of_nodes: {number_of_nodes}")
-    logger.debug(f"heartbeat: {float(args.heartbeat)}")
+    logger.debug(f"initial leader: node {number_of_nodes}")
+    logger.debug(f"heartbeat duration used: {float(args.heartbeat)}")
 
     logger.info("Start running multiple nodes...")
     for node_id in range(number_of_nodes):
@@ -106,7 +93,9 @@ def main():
             float(args.heartbeat),
             float(args.fault_duration),
             starting_port + node_id,
-            node_id + 1, port_used
+            number_of_nodes,
+            node_id + 1, port_used,
+            number_of_nodes
         ))
         process.start()
         list_nodes.append(process)

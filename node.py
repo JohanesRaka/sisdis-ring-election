@@ -29,50 +29,15 @@ class UdpSocket(NodeSocket):
 
 def thread_exception_handler(args):
     logging.error(f"Uncaught exception", exc_info=(args.exc_type, args.exc_value, args.exc_traceback))
-
-class PersistentWriter:
-    def __init__(self,node_id):
-        path = r'persistent/node' + str(node_id)
-        self.current_term_path = os.path.join(path,'current_term.csv')
-        self.voted_for_path = os.path.join(path,'voted_for.csv')
-
-    def set_current_term(self,data):
-        row = {'current_term': data}
-        with open(self.current_term_path, 'w', encoding='UTF8') as csvfile:
-            writer = csv.DictWriter(csvfile, fieldnames=['current_term'])
-            writer.writeheader()
-            writer.writerow(row)
-
-    def set_voted_for(self,data):
-        row = {'voted_for': data}
-        with open(self.voted_for_path, 'w', encoding='UTF8') as csvfile:
-            writer = csv.DictWriter(csvfile, fieldnames=['voted_for'])
-            writer.writeheader()
-            writer.writerow(row)
-
-    def get_current_term(self):
-        if os.path.exists(self.current_term_path):
-            with open(self.current_term_path, 'r', encoding='UTF8') as csvfile:
-                reader = csv.reader(csvfile)
-                return reader[1]
-        else:
-            return None
-        
-    def get_voted_for(self):
-        if os.path.exists(self.voted_for_path):
-            with open(self.voted_for_path, 'r', encoding='UTF8') as csvfile:
-                reader = csv.reader(csvfile)
-                return reader[1]
-        else:
-            return None
     
 class RingNode:
 
-    def __init__(self, node_id: int, port: int, active_nodes: list, fault_duration: int, is_continue: bool,
+    def __init__(self, node_id: int, port: int, active_nodes: list, fault_duration: int, active_nodes_ports: list,
                  heartbeat_duration: float, leader: int):
         self.node_id = node_id
         self.port = port
         self.active_nodes = active_nodes
+        self.active_nodes_port = active_nodes_ports
         self.fault_duration = fault_duration
         self.heartbeat_duration = heartbeat_duration
         self.leader = leader
@@ -81,14 +46,16 @@ class RingNode:
     def start_heartbeat_listen(self,fault_duration):
         pass
 
-    def start_heartbeat(self,fault_duration-1):
+    def start_heartbeat(self,heartbeat_duration):
         pass
 
     def become_candidate(self):
         pass
 
     def start(self):
-        pass
+        logging.info(f'node {self.node_id} sucesfully start')
+        logging.info(f'initial leader = node {self.leader}')
+        
 
 
 def reload_logging_windows(filename):
@@ -102,7 +69,7 @@ def reload_logging_windows(filename):
                         level=logging.INFO)
 
 def main(heartbeat_duration=1, fault_duration=1, port=1000, active_nodes=[],
-         node_id=1, is_continue=False):
+         node_id=1, active_nodes_ports=[], leader=1):
     reload_logging_windows(f"logs/node{node_id}.txt")
     threading.excepthook = thread_exception_handler
     try:
@@ -111,10 +78,10 @@ def main(heartbeat_duration=1, fault_duration=1, port=1000, active_nodes=[],
         logging.debug(f"heartbeat_duration: {heartbeat_duration}")
         logging.debug(f"fault_duration: {fault_duration}")
         logging.debug(f"port: {port}")
-        logging.debug(f"is_continue: {is_continue}")
+        logging.debug(f"active_nodes: {active_nodes_ports}")
 
         logging.info("Create node...")
-        node = RingNode(node_id, port, active_nodes, fault_duration, is_continue, heartbeat_duration, leader)
+        node = RingNode(node_id, port, active_nodes, fault_duration, active_nodes_ports, heartbeat_duration, leader)
 
         logging.info("Execute node.start()...")
         node.start()
