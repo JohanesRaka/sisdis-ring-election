@@ -49,7 +49,10 @@ class RingNode:
         self.heartbeat_duration = heartbeat_duration
         self.leader = leader
         self.socket = UdpSocket(self.port,self.fault_duration)
-        pass
+        index = self.active_nodes.index(self.node_id)
+        self.prev_node = (index + 1) % num_nodes
+        self.next_node = (index - 1) % num_nodes
+        
         
     def start_heartbeat_listen(self):
         logging.info("Heartbeat listen thread starting...")
@@ -61,7 +64,7 @@ class RingNode:
                 if message['type'] == "HEARTBEAT":
                     logging.info(f"[HEARTBEAT] Got heartbeat from node_{message['sender_id']}")
             except socket.timeout as e:
-                logging.info("[HEARTBEAT_TIMEOUT] Haven't received heartbeat from next node")
+                logging.info("[HEARTBEAT_TIMEOUT] Haven't received heartbeat from previous node")
 
     def start_heartbeat(self):
         logging.info("Heartbeat send thread starting...")
@@ -69,9 +72,9 @@ class RingNode:
             time.sleep(self.heartbeat_duration)
             position = self.active_nodes.index(self.node_id)
             num_nodes = len(self.active_nodes)
-            prev_neighbor_index = (position - 1) % num_nodes
-            prev_neighbor_id = self.active_nodes[prev_neighbor_index]
-            prev_neighbor_port = self.active_nodes_ports[prev_neighbor_index]
+            next_neighbor_index = (position + 1) % num_nodes
+            next_neighbor_id = self.active_nodes[next_neighbor_index]
+            next_neighbor_port = self.active_nodes_ports[next_neighbor_index]
             logging.info(f"Sending to node_{prev_neighbor_id} with port {prev_neighbor_port}")
             raw_message = {
                 'sender_id' : self.node_id,
