@@ -59,6 +59,8 @@ def manual_event_input(args, starting_port, port_used, number_of_nodes):
                 process.kill()
                 logger.debug(f"Kill process with ID: {process.name}")
             logger.info("Done stopping all the nodes...")
+        elif "d" in input_value:
+            break
 
 
 def main():
@@ -86,6 +88,7 @@ def main():
     logger.debug(f"heartbeat duration used: {float(args.heartbeat)}")
 
     logger.info("Start running multiple nodes...")
+    active_nodes = [i+1 for i in range(number_of_nodes)]
     for node_id in range(number_of_nodes):
         logger.info(f"Run node {node_id+1}...")
         reload_logging_config_node(f"node{node_id + 1}.txt")
@@ -93,7 +96,7 @@ def main():
             float(args.heartbeat),
             float(args.fault_duration),
             starting_port + node_id,
-            number_of_nodes,
+            active_nodes,
             node_id + 1, port_used,
             number_of_nodes
         ))
