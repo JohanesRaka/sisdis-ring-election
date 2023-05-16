@@ -101,6 +101,7 @@ class RingNode:
                         logging.info(f"[LEADER_ELECTION] Already participated in leader election, message discarded")
 
                 elif message['type'] == 'UPDATE_LEADER':
+                    self.is_participant = False
                     if self.node_id != message['leader_id']:
                         logging.info(f"[UPDATE_LEADER] Update leader message received. Leader now is node_{message['leader_id']}")
                         self.leader = message['leader_id']
