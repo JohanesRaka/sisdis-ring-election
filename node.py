@@ -110,24 +110,64 @@ class RingNode:
                         self.send_to_next_node(message)
                     else:
                         logging.info(f"[UPDATE_LEADER] Message have come back to me. All active nodes leader are updated!")
-            except socket.timeout as e:
-                if not self.is_participant:
-                    self.is_participant = True
-                    logging.info("[HEARTBEAT_TIMEOUT] Haven't received heartbeat from previous node")
-                    if self.active_nodes[self.prev_node_index] == self.leader:
-                        logging.info("[LEADER_ELECTION] Leader timeout. Starting leader election...")
-                        self.set_leader_as_none()
-                        raw_msg_sent = {
-                            'sender_id' : self.node_id,
-                            'type': "LEADER_ELECTION",
-                            'candidate_id' : self.node_id
-                        }
-                        next_node_id = self.active_nodes[self.next_node_index]
-                        logging.info(f"[LEADER_ELECTION] I've voted. Forwarding leader election message to node_{next_node_id}")
-                        self.send_to_next_node(raw_msg_sent)
+                elif message['type'] == 'NOTIFY_NODE_TIMEOUT':
+                    logging.info(f"[NOTIFY_NODE_TIMEOUT] Got info that node_{message['timeout_node']} is inactive from node_{message['sender_id']}")
+                    if self.node_id != self.leader:
+                        message['sender_id'] = self.node_id
+                        logging.info("[NOTIFY_NODE_TIMEOUT] Propagating message to next node")
+                        self.send_to_next_node(message)
                     else:
-                        logging.info(f"nih {self.active_nodes[self.prev_node_index]}")
-                        logging.info(f"nih {self.leader}")
+                        logging.info("[NOTIFY_NODE_TIMEOUT] Removing timeout node and updating ring...")
+                        index = self.active_nodes.index(message['timeout_node'])
+                        self.active_nodes.pop(index)
+                        self.active_nodes_ports.pop(index)
+                        self.update_prev_and_next_node_index()
+                        raw_msg_sent = {
+                            'sender_id' : self.leader,
+                            'type': "UPDATE_ACTIVE_NODES",
+                            'active_nodes': self.active_nodes,
+                            'active_nodes_ports' : self.active_nodes_ports
+                        }
+                        logging.info("[UPDATE_ACTIVE_NODES] Propagating updated active nodes to next node")
+                        self.send_to_next_node(raw_msg_sent)
+                elif message['type'] == "UPDATE_ACTIVE_NODES":
+                    if self.node_id != self.leader:
+                        logging.info("[UPDATE_ACTIVE_NODES] Got new list of active nodes, updating...")
+                        self.active_nodes = message['active_nodes']
+                        self.active_nodes_ports = message['active_nodes_ports']
+                        self.update_prev_and_next_node_index()
+                        logging.info("[UPDATE_ACTIVE_NODES] Updated. Propagating updated active nodes to next node")
+                        message['sender_id'] = self.node_id
+                        self.send_to_next_node(message)
+                    else:
+                        logging.info("[UPDATE_ACTIVE_NODES] Message have came back to me. All nodes active node list are updated!")
+                        
+
+                        
+                        
+            except socket.timeout:
+                logging.info("[HEARTBEAT_TIMEOUT] Haven't received heartbeat from previous node")
+                if not self.is_participant and self.active_nodes[self.prev_node_index] == self.leader:
+                    self.is_participant = True
+                    logging.info("[LEADER_ELECTION] Leader timeout. Starting leader election...")
+                    self.set_leader_as_none()
+                    raw_msg_sent = {
+                        'sender_id' : self.node_id,
+                        'type': "LEADER_ELECTION",
+                        'candidate_id' : self.node_id
+                    }
+                    next_node_id = self.active_nodes[self.next_node_index]
+                    logging.info(f"[LEADER_ELECTION] I've voted. Forwarding leader election message to node_{next_node_id}")
+                    self.send_to_next_node(raw_msg_sent)
+                else:
+                    raw_msg_sent = {
+                        'sender_id': self.node_id,
+                        'type': 'NOTIFY_NODE_TIMEOUT',
+                        'timeout_node': self.active_nodes[self.prev_node_index]
+                    }
+                    logging.info(f"[NOTIFY_NODE_TIMEOUT] Propagating message to next node")
+                    self.send_to_next_node(raw_msg_sent)
+
 
     def set_leader_as_none(self):
         leader_index = self.active_nodes.index(self.leader)
