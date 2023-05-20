@@ -55,8 +55,8 @@ class RingNode:
         self.next_node_index = (index + 1) % len(self.active_nodes)
         
         
-    def start_heartbeat_listen(self):
-        logging.info("Heartbeat listen thread starting...")
+    def start_listening_thread(self):
+        logging.info("Listening thread starting...")
         while True:
             try:
                 raw_msg,_ = self.socket.listen()
@@ -141,10 +141,7 @@ class RingNode:
                         self.send_to_next_node(message)
                     else:
                         logging.info("[UPDATE_ACTIVE_NODES] Message have came back to me. All nodes active node list are updated!")
-                        
-
-                        
-                        
+                     
             except socket.timeout:
                 logging.info("[HEARTBEAT_TIMEOUT] Haven't received heartbeat from previous node")
                 if not self.is_participant and self.active_nodes[self.prev_node_index] == self.leader:
@@ -213,8 +210,8 @@ class RingNode:
         logging.info("Initiating heartbeat send thread")
         heartbeat_send_thread = threading.Thread(target=self.start_heartbeat)
         heartbeat_send_thread.start()
-        logging.info("Initiating heartbeat listen thread")
-        heartbeat_listen_thread = threading.Thread(target=self.start_heartbeat_listen)
+        logging.info("Initiating listening thread")
+        heartbeat_listen_thread = threading.Thread(target=self.start_listening_thread)
         heartbeat_listen_thread.start()
 
 
@@ -244,7 +241,7 @@ def main(heartbeat_duration=1, fault_duration=1, port=1000, active_nodes=[],
         node = RingNode(node_id, port, active_nodes, fault_duration, active_nodes_ports, heartbeat_duration, leader)
 
         logging.info("Execute node.start()...")
-        logging.info(f"LEADERNYA {leader}")
+        logging.info(f"The Leader is {leader}")
         node.start()
     except Exception:
         logging.exception("Caught Error")
