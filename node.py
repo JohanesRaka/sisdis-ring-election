@@ -6,6 +6,9 @@ import socket
 import csv
 import random
 import json
+import websockets
+import asyncio
+import queue
 from enum import Enum
 # BEGIN code diambil dari node_socket.py assignment1
 class NodeSocket:
@@ -33,14 +36,11 @@ class UdpSocket(NodeSocket):
 def thread_exception_handler(args):
     logging.error(f"Uncaught exception", exc_info=(args.exc_type, args.exc_value, args.exc_traceback))
 
-class MessageType(Enum):
-    HEARTBEAT = 1
-
 
 class RingNode:
 
     def __init__(self, node_id: int, port: int, active_nodes: list, fault_duration: int, active_nodes_ports: list,
-                 heartbeat_duration: float, leader: int):
+                 heartbeat_duration: float, leader: int, websocket_port:int):
         self.node_id = node_id
         self.port = port
         self.active_nodes = active_nodes
@@ -53,37 +53,38 @@ class RingNode:
         index = self.active_nodes.index(self.node_id)
         self.prev_node_index = (index - 1) % len(self.active_nodes)
         self.next_node_index = (index + 1) % len(self.active_nodes)
-        
+        self.websocket_port = websocket_port
+        self.queue = queue.Queue()
         
     def start_listening_thread(self):
-        logging.info("Listening thread starting...")
+        self.push_log("Listening thread starting...")
         while True:
             try:
                 raw_msg,_ = self.socket.listen()
                 message = json.loads(raw_msg)
                 assert type(message) == dict
                 if message['type'] == "HEARTBEAT":
-                    logging.info(f"[HEARTBEAT] Got heartbeat from node_{message['sender_id']}")
+                    self.push_log(f"[HEARTBEAT] Got heartbeat from node_{message['sender_id']}")
                 
                 elif message['type'] == "LEADER_ELECTION":
-                    logging.info(f"[LEADER_ELECTION] Got leader election message from node_{message['sender_id']}")
+                    self.push_log(f"[LEADER_ELECTION] Got leader election message from node_{message['sender_id']}")
                     if self.leader in self.active_nodes:
                         self.set_leader_as_none()
 
                     if message['candidate_id'] > self.node_id:
-                        logging.info(f"[LEADER_ELECTION] Candidate id is {message['candidate_id']} which is higher than me. Forwarding to next node...")
+                        self.push_log(f"[LEADER_ELECTION] Candidate id is {message['candidate_id']} which is higher than me. Forwarding to next node...")
                         message['sender_id'] = self.node_id
                         self.send_to_next_node(message)
 
                     elif message['candidate_id'] == self.node_id:
-                        logging.info(f"[LEADER_ELECTION] Message have returned back to me with my id, i am the leader!")
+                        self.push_log(f"[LEADER_ELECTION] Message have returned back to me with my id, i am the leader!")
                         self.leader = self.node_id
                         raw_msg_sent = {
                             'sender_id' : self.node_id,
                             'type': "UPDATE_LEADER",
                             'leader_id' : self.leader
                         }
-                        logging.info("[UPDATE_LEADER] Propagating update leader message to next node")
+                        self.push_log("[UPDATE_LEADER] Propagating update leader message to next node")
                         self.send_to_next_node(raw_msg_sent)
 
                     elif not self.is_participant:
@@ -94,30 +95,30 @@ class RingNode:
                             'candidate_id' : self.node_id
                         }
                         next_node_id = self.active_nodes[self.next_node_index]
-                        logging.info(f"[LEADER_ELECTION] I've voted. Forwarding leader election message to node_{next_node_id}")
+                        self.push_log(f"[LEADER_ELECTION] I've voted. Forwarding leader election message to node_{next_node_id}")
                         self.send_to_next_node(raw_msg_sent)
 
                     else:
-                        logging.info(f"[LEADER_ELECTION] Already participated in leader election, message discarded")
+                        self.push_log(f"[LEADER_ELECTION] Already participated in leader election, message discarded")
 
                 elif message['type'] == 'UPDATE_LEADER':
                     self.is_participant = False
                     if self.node_id != message['leader_id']:
-                        logging.info(f"[UPDATE_LEADER] Update leader message received. Leader now is node_{message['leader_id']}")
+                        self.push_log(f"[UPDATE_LEADER] Update leader message received. Leader now is node_{message['leader_id']}")
                         self.leader = message['leader_id']
-                        logging.info(f"[UPDATE_LEADER] Propagating leader message to next node...")
+                        self.push_log(f"[UPDATE_LEADER] Propagating leader message to next node...")
                         message['sender_id'] = self.node_id
                         self.send_to_next_node(message)
                     else:
-                        logging.info(f"[UPDATE_LEADER] Message have come back to me. All active nodes leader are updated!")
+                        self.push_log(f"[UPDATE_LEADER] Message have come back to me. All active nodes leader are updated!")
                 elif message['type'] == 'NOTIFY_NODE_TIMEOUT':
-                    logging.info(f"[NOTIFY_NODE_TIMEOUT] Got info that node_{message['timeout_node']} is inactive from node_{message['sender_id']}")
+                    self.push_log(f"[NOTIFY_NODE_TIMEOUT] Got info that node_{message['timeout_node']} is inactive from node_{message['sender_id']}")
                     if self.node_id != self.leader:
                         message['sender_id'] = self.node_id
-                        logging.info("[NOTIFY_NODE_TIMEOUT] Propagating message to next node")
+                        self.push_log("[NOTIFY_NODE_TIMEOUT] Propagating message to next node")
                         self.send_to_next_node(message)
                     else:
-                        logging.info("[NOTIFY_NODE_TIMEOUT] Removing timeout node and updating ring...")
+                        self.push_log("[NOTIFY_NODE_TIMEOUT] Removing timeout node and updating ring...")
                         index = self.active_nodes.index(message['timeout_node'])
                         self.active_nodes.pop(index)
                         self.active_nodes_ports.pop(index)
@@ -128,25 +129,25 @@ class RingNode:
                             'active_nodes': self.active_nodes,
                             'active_nodes_ports' : self.active_nodes_ports
                         }
-                        logging.info("[UPDATE_ACTIVE_NODES] Propagating updated active nodes to next node")
+                        self.push_log("[UPDATE_ACTIVE_NODES] Propagating updated active nodes to next node")
                         self.send_to_next_node(raw_msg_sent)
                 elif message['type'] == "UPDATE_ACTIVE_NODES":
                     if self.node_id != self.leader:
-                        logging.info("[UPDATE_ACTIVE_NODES] Got new list of active nodes, updating...")
+                        self.push_log("[UPDATE_ACTIVE_NODES] Got new list of active nodes, updating...")
                         self.active_nodes = message['active_nodes']
                         self.active_nodes_ports = message['active_nodes_ports']
                         self.update_prev_and_next_node_index()
-                        logging.info("[UPDATE_ACTIVE_NODES] Updated. Propagating updated active nodes to next node")
+                        self.push_log("[UPDATE_ACTIVE_NODES] Updated. Propagating updated active nodes to next node")
                         message['sender_id'] = self.node_id
                         self.send_to_next_node(message)
                     else:
-                        logging.info("[UPDATE_ACTIVE_NODES] Message have came back to me. All nodes active node list are updated!")
+                        self.push_log("[UPDATE_ACTIVE_NODES] Message have came back to me. All nodes active node list are updated!")
                      
             except socket.timeout:
-                logging.info("[HEARTBEAT_TIMEOUT] Haven't received heartbeat from previous node")
+                self.push_log("[HEARTBEAT_TIMEOUT] Haven't received heartbeat from previous node")
                 if not self.is_participant and self.active_nodes[self.prev_node_index] == self.leader:
                     self.is_participant = True
-                    logging.info("[LEADER_ELECTION] Leader timeout. Starting leader election...")
+                    self.push_log("[LEADER_ELECTION] Leader timeout. Starting leader election...")
                     self.set_leader_as_none()
                     raw_msg_sent = {
                         'sender_id' : self.node_id,
@@ -154,7 +155,7 @@ class RingNode:
                         'candidate_id' : self.node_id
                     }
                     next_node_id = self.active_nodes[self.next_node_index]
-                    logging.info(f"[LEADER_ELECTION] I've voted. Forwarding leader election message to node_{next_node_id}")
+                    self.push_log(f"[LEADER_ELECTION] I've voted. Forwarding leader election message to node_{next_node_id}")
                     self.send_to_next_node(raw_msg_sent)
                 else:
                     raw_msg_sent = {
@@ -162,7 +163,7 @@ class RingNode:
                         'type': 'NOTIFY_NODE_TIMEOUT',
                         'timeout_node': self.active_nodes[self.prev_node_index]
                     }
-                    logging.info(f"[NOTIFY_NODE_TIMEOUT] Propagating message to next node")
+                    self.push_log(f"[NOTIFY_NODE_TIMEOUT] Propagating message to next node")
                     self.send_to_next_node(raw_msg_sent)
 
 
@@ -184,7 +185,7 @@ class RingNode:
         self.socket.send(msg,dest_port)
 
     def start_heartbeat(self):
-        logging.info("Heartbeat send thread starting...")
+        self.push_log("Heartbeat send thread starting...")
         while True:
             time.sleep(self.heartbeat_duration)
             position = self.active_nodes.index(self.node_id)
@@ -192,7 +193,7 @@ class RingNode:
             next_neighbor_index = (position + 1) % num_nodes
             next_neighbor_id = self.active_nodes[next_neighbor_index]
             next_neighbor_port = self.active_nodes_ports[next_neighbor_index]
-            logging.info(f"Sending to node_{next_neighbor_id} with port {next_neighbor_port}")
+            self.push_log(f"Sending to node_{next_neighbor_id} with port {next_neighbor_port}")
             raw_message = {
                 'sender_id' : self.node_id,
                 'type' : "HEARTBEAT"
@@ -202,17 +203,29 @@ class RingNode:
         
 
 
-    def become_candidate(self):
-        pass
+    def push_log(self,message):
+        self.queue.put(message)
+        logging.info(message)
 
+    
     def start(self):
-        logging.info(f"Node {self.node_id} is starting...")
-        logging.info("Initiating heartbeat send thread")
+        self.push_log(f"Node {self.node_id} is starting...")
+        self.push_log("Initiating heartbeat send thread")
         heartbeat_send_thread = threading.Thread(target=self.start_heartbeat)
         heartbeat_send_thread.start()
-        logging.info("Initiating listening thread")
+        self.push_log("Initiating listening thread")
         heartbeat_listen_thread = threading.Thread(target=self.start_listening_thread)
         heartbeat_listen_thread.start()
+        websocket_server = websockets.serve(lambda websocket: self.websocket_handler(websocket), "", self.websocket_port)
+        asyncio.get_event_loop().run_until_complete(websocket_server)
+        asyncio.get_event_loop().run_forever()
+
+    async def websocket_handler(self,websocket):
+        while True:
+            raw_log = self.queue.get()
+            log = json.dumps(raw_log)
+            await websocket.send(log)
+            await asyncio.sleep(1)
 
 
 
@@ -226,7 +239,7 @@ def reload_logging_windows(filename):
                         filemode='w',
                         level=logging.INFO)
 
-def main(heartbeat_duration=1, fault_duration=1, port=1000, active_nodes=[],
+def main(websocket_port, heartbeat_duration=1, fault_duration=1, port=1000, active_nodes=[],
          node_id=1, active_nodes_ports=[], leader=1):
     reload_logging_windows(f"logs/node{node_id}.txt")
     threading.excepthook = thread_exception_handler
@@ -238,7 +251,7 @@ def main(heartbeat_duration=1, fault_duration=1, port=1000, active_nodes=[],
         logging.debug(f"active_nodes: {active_nodes_ports}")
 
         logging.info("Create node...")
-        node = RingNode(node_id, port, active_nodes, fault_duration, active_nodes_ports, heartbeat_duration, leader)
+        node = RingNode(node_id, port, active_nodes, fault_duration, active_nodes_ports, heartbeat_duration, leader,websocket_port)
 
         logging.info("Execute node.start()...")
         logging.info(f"The Leader is {leader}")

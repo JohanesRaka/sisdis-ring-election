@@ -78,6 +78,7 @@ def main():
     logger.info("The main program is running...")
     logger.info("Determining the ports that will be used...")
     starting_port = random.randint(10000, 11000)
+    websocket_port = 8001
     number_of_nodes = int(args.node)
     port_used = [port for port in range(starting_port, starting_port + number_of_nodes)]
     logger.debug(f"port_used: {port_used}")
@@ -93,12 +94,13 @@ def main():
         logger.info(f"Run node {node_id+1}...")
         reload_logging_config_node(f"node{node_id + 1}.txt")
         process = NodeProcess(target=node.main, args=(
+            websocket_port + node_id,
             float(args.heartbeat),
             float(args.fault_duration),
             starting_port + node_id,
             active_nodes,
             node_id + 1, port_used,
-            number_of_nodes
+            number_of_nodes,
         ))
         process.start()
         list_nodes.append(process)
