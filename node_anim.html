@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.0.2/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-EVSTQN3/azprG1Anm3QDgpJLIm9Nao0Yz1ztcQTwFspd3yD65VohhpuuCOmLASjC" crossorigin="anonymous">
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.0.2/dist/js/bootstrap.bundle.min.js" integrity="sha384-MrcW6ZMFYlzcLA8Nl+NtUVF0sA7MsXsP1UyJoMp4YLEuNSfAP+JcXn/tWtIaxVXM" crossorigin="anonymous"></script>
+    <script src="https://unpkg.com/konva@9/konva.min.js"></script>
+    <script type="text/javascript" src="http://code.jquery.com/jquery-latest.min.js"></script>
+    <meta charset="utf-8" />
+    <title>Konva Ring Demo</title>
+    <style>
+      body {
+        margin: 0;
+        padding: 0;
+        background-color: #f0f0f0;
+      }
+      .hidden{
+        display: none;
+      }
+    </style>
+  </head>
+  <body>
+  <h1>Ring Election Simulator</h1>
+  <div class="card">
+  <div class="card-body">
+    <form>
+      <div class="mb-3">
+        <label for="exampleInputEmail1" class="form-label">Number of Nodes</label>
+        <select class="form-select" aria-label="Default select example" id="edge">
+          <option value="3">3</option>
+          <option value="4">4</option>
+          <option value="5">5</option>
+          <option value="6">6</option>
+          <option value="7">7</option>
+          <option value="8">8</option>
+          <option value="9">9</option>
+          <option value="10">10</option>
+        </select>
+        <br/>
+        <button type ='button' class="btn btn-primary" onclick="generate()">Generate</button>
+        <br/>
+      </div>
+      <div class="mb-3" id="second_part">
+        <label for="kill-choice" class="form-label">Choose Node to Kill</label>
+      <select class="form-select" id="kill-choice">
+      </select>
+      <br/>
+      <button type ='button' class="btn btn-danger" onclick="kill()">Kill</button>
+      </div>
+    </form>
+    </div>
+    </div>
+    
+    <div id="container" style="background-color:#f0f0f0; height:80vh"></div>
+    <script type="text/javascript">
+      var width = document.getElementById("container").clientWidth;
+      var height = document.getElementById("container").clientHeight;
+      var stage = new Konva.Stage({
+        container: 'container',
+        width: width,
+        height: height,
+      });
+      let edge = null;
+      let edges = [];
+      let points = [];
+      let layer = null;
+      let randomId = [];
+      // set the middle position of the stage
+      var middleX = stage.width() / 2;
+      var middleY = stage.height() / 2;
+      function generate(){
+        if (layer != null){
+          layer.destroy();
+          edges = [];
+          points = [];
+          randomId = [];
+        }
+        edge = document.getElementById("edge").value;
+        layer = new Konva.Layer();  
+        // determine the edge coordinates of track
+        for (var n = 0; n < edge; n++) {
+          var x = middleX + 300 * Math.cos(2 * Math.PI * n / edge);
+          var y = middleY + 300 * Math.sin(2 * Math.PI * n / edge);
+          edges.push({
+              x: x,
+              y: y,
+          })
+          points.push(x);
+          points.push(y);
+        }
+        // create track
+        var poly = new Konva.Line({
+          points: points,
+          fill: '#ffffff00',
+          stroke: 'black',
+          strokeWidth: 5,
+          closed: true,
+        });
+        layer.add(poly);
+        
+        while(randomId.length < edge){
+              var r = Math.floor(Math.random() * edge) + 1;
+              if(randomId.indexOf(r) === -1) randomId.push(r);
+        }
+        console.log(randomId);
+        for (var i = 0; i < edge; i++){
+          var circle = new Konva.Circle({
+              x: edges[i].x,
+              y: edges[i].y,
+              radius: 40,
+              fill: 'green',
+              stroke: 'black',
+              strokeWidth: 4,
+              id:`node${randomId[i]}`
+          });
+          var complexText = new Konva.Text({
+              x: edges[i].x-20,
+              y: edges[i].y - 20,
+              text: `${randomId[i]}`,
+              fontSize: 40,
+              fontFamily: 'Calibri',
+              fill: 'white',
+              align: 'center',
+          });
+          layer.add(circle);
+          layer.add(complexText);
+          
+        }
+        // add the layer to the stage
+        stage.add(layer);
+        var leader = stage.find(`#node${edge}`)[0];
+        leader.fill('red')
+        populate();
+      }
+      function check(){
+        console.log(edge);
+      }
+      function populate(){
+
+        var s2 = document.getElementById("kill-choice");
+        s2.innerHTML = "";
+
+        for(var option in randomId) {
+          console.log(option);
+          var newOption = document.createElement("option");
+          newOption.value = randomId[option];
+          newOption.innerHTML = randomId[option];
+          s2.options.add(newOption);
+        }
+        console.log('done')
+      }
+      function kill(){
+        var nodetk = document.getElementById("kill-choice").value;
+        
+        if (layer != null){
+          layer.destroy();
+          edges = [];
+          points = [];
+        }
+        console.log(nodetk);
+        const index = randomId.indexOf(parseInt(nodetk));
+        console.log(index);
+        randomId.splice(index, 1);
+        edge -= 1;
+        
+        console.log(randomId)
+        // determine the edge coordinates of track
+        for (var n = 0; n < edge; n++) {
+          var x = middleX + 300 * Math.cos(2 * Math.PI * n / edge);
+          var y = middleY + 300 * Math.sin(2 * Math.PI * n / edge);
+          edges.push({
+              x: x,
+              y: y,
+          })
+          points.push(x);
+          points.push(y);
+        }
+        // create track
+        var poly = new Konva.Line({
+          points: points,
+          fill: '#ffffff00',
+          stroke: 'black',
+          strokeWidth: 5,
+          closed: true,
+        });
+        layer.add(poly);
+        for (var i = 0; i < edge; i++){
+          var circle = new Konva.Circle({
+              x: edges[i].x,
+              y: edges[i].y,
+              radius: 40,
+              fill: 'green',
+              stroke: 'black',
+              strokeWidth: 4,
+              id:`node${randomId[i]}`
+          });
+          var complexText = new Konva.Text({
+              x: edges[i].x-20,
+              y: edges[i].y - 20,
+              text: `${randomId[i]}`,
+              fontSize: 40,
+              fontFamily: 'Calibri',
+              fill: 'white',
+              align: 'center',
+          });
+          layer.add(circle);
+          layer.add(complexText);
+        }
+        stage.add(layer);
+        var leaderId = Math.max(...randomId);
+        var leader = stage.find(`#node${leaderId}`)[0];
+        leader.fill('red')
+        populate();
+      }
+    </script>
+    
+  </body>
+</html>
